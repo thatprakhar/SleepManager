@@ -20,8 +20,10 @@ user_t *create_user(char *name, int age) {
   new_user->name = malloc(strlen(name) > 25 ? 25 : strlen(name));
   assert(new_user->name);
   strncpy(new_user->name, name, strlen(name) > 25 ? 25 : strlen(name));
+  
   new_user->age = age;
-  new_user->sleep_data = NULL;
+  new_user->avg_sleep = 0.0;
+  new_user->data_size = 0;
 
   return new_user;
 }
@@ -30,49 +32,54 @@ user_t *create_user(char *name, int age) {
  * Method to add sleep data
  */
 
-int add_sleep_data(user_t *user, int date, int month, int year, float sleep_hour) {
+int add_sleep_data(user_t *user, int date, int month, int year, int sleep_hour) {
   assert(user);
-  assert(date > 0 && date <= 31);
-  assert(month > 0 && month < 13);
-  assert(year > 0);
-  float total_sleep = 0;
+  if (date < 1 || date > 31) {
+    return INVALID_DATE;
+  }
+  if (month < 0 || month > 12) {
+    return INVALID_DATE;
+  }
+  if (year < 0) {
+    return INVALID_DATE;
+  }
+  if (sleep_hour < 0) {
+    return INVALID_SLEEP;
+  }
+  int total_sleep = 0;
 
-  node_t * month_ptr = user->sleep_data->months;
-  node_t * date_ptr = user->sleep_data->date;
-  node_t * year_ptr = user->sleep_data->years;
-  node_t *sleep_ptr = user->sleep_data->sleep_hour;
+  sleep_data_t *date_ptr = user->sleep_data;
 
-  while (date_ptr->next != NULL) {
-    if (date_ptr->val == date && month_ptr->val == month && month_ptr->val == month) {
-      return DATA_EXISTS;
-    }
-    total_sleep += sleep_ptr->val;
-    sleep_ptr = sleep_ptr->next;
-    month_ptr = month_ptr->next;
-    date_ptr = date_ptr->next;
-    year_ptr = year_ptr->next;
+  if (!date_ptr) {
+    user->sleep_data = malloc(sizeof(sleep_data_t));
+    assert(user->sleep_data);
+    user->sleep_data->date = date;
+    user->sleep_data->month = month;
+    user->sleep_data->year = year;
+    user->sleep_data->sleep_hour = sleep_hour;
+    user->sleep_data->next = NULL;
+
+    user->data_size = 1;
+    user->avg_sleep = sleep_hour;
+    return DATA_ADDED;
   }
 
-  month_ptr->next = malloc(sizeof(node_t));
-  assert(month_ptr->next);
-  month_ptr->next->val = month;
-
-  date_ptr->next = malloc(sizeof(node_t));
-  assert(date_ptr->next);
-  date_ptr->next->val = date;
-
-  year_ptr->next = malloc(sizeof(node_t));
-  assert(year_ptr->next);
-  year_ptr->next->val = year;
-
-  sleep_ptr->next = malloc(sizeof(node_t));
-  assert(sleep_ptr->next);
-  sleep_ptr->next->val = sleep_hour;
-  
-  user->sleep_data->data_size++;
+  while (date_ptr->next != NULL) {
+    total_sleep += date_ptr->sleep_hour;
+    date_ptr = date_ptr->next;
+  }
+  total_sleep += date_ptr->sleep_hour;
   total_sleep += sleep_hour;
+  
+  date_ptr->next = malloc(sizeof(sleep_data_t));
+  date_ptr->next->month = month;
+  date_ptr->next->date = date;
+  date_ptr->next->year = year;
+  date_ptr->next->sleep_hour = sleep_hour;
+  date_ptr->next->next = NULL;
 
-  user->sleep_data->avg_sleep = total_sleep / user->sleep_data->data_size;
+  user->data_size++;
+  user->avg_sleep = (double)total_sleep / user->data_size;
 
   return DATA_ADDED;
 }
@@ -86,24 +93,18 @@ void write_user_data(user_t *user) {
   assert(user);
 
   FILE *file_ptr = NULL;
-  file_ptr = fopen(strcat(user->name, ".txt"), "w");
-
+  file_ptr = fopen(user->name, "w");
+  printf("Writing data....\n");
   fprintf(file_ptr, "|------Sleep Data------|\n");
   fprintf(file_ptr, "Name: %s\n", user->name);
   fprintf(file_ptr, "Age: %d\n", user->age);
-  fprintf(file_ptr, "Record Size: %d\n", user->sleep_data->data_size);
-  fprintf(file_ptr, "Avg. Sleep : %0.1f\nSleep Data:\n", user->sleep_data->avg_sleep);
+  fprintf(file_ptr, "Record Size: %d\n", user->data_size);
+  fprintf(file_ptr, "Avg. Sleep : %0.1f\n\nSleep Data:\n", user->avg_sleep);
 
-  node_t * month_ptr = user->sleep_data->months;
-  node_t * date_ptr = user->sleep_data->date;
-  node_t * year_ptr = user->sleep_data->years;
-  node_t *sleep_ptr = user->sleep_data->sleep_hour;
+  sleep_data_t * sleep_ptr = user->sleep_data;
 
   while (sleep_ptr) {
-    fprintf(file_ptr, "%d / %d / %d : %d\n", date_ptr->val, month_ptr->val, year_ptr->val, sleep_ptr->val);
-    date_ptr = date_ptr->next;
-    year_ptr = year_ptr->next;
-    month_ptr = month_ptr->next;
+    fprintf(file_ptr, "%d/%d/%d : %d\n", sleep_ptr->date, sleep_ptr->month, sleep_ptr->year, sleep_ptr->sleep_hour);
     sleep_ptr = sleep_ptr->next;
   }
 
@@ -133,30 +134,13 @@ void free_user(user_t *user) {
  */
 
 void free_sleep_data(sleep_data_t *sleep_data) {
-  assert(sleep_data);
-
-  node_t * month_ptr = sleep_data->months;
-  node_t * date_ptr = sleep_data->date;
-  node_t * year_ptr = sleep_data->years;
-  node_t *sleep_ptr = sleep_data->sleep_hour;
+  sleep_data_t *sleep_ptr = sleep_data;
 
   while (sleep_ptr) {
-    node_t *next_date_ptr = date_ptr->next;
-    node_t *next_year_ptr = year_ptr->next;
-    node_t *next_month_ptr = month_ptr->next;
-    node_t *next_sleep_ptr = sleep_ptr->next;
-
-    free(date_ptr);
-    free(month_ptr);
+    sleep_data_t  *next_sleep_ptr = sleep_ptr->next;
     free(sleep_ptr);
-    free(year_ptr);
-
-    date_ptr = next_date_ptr;
-    month_ptr = next_month_ptr;
-    year_ptr = next_year_ptr;
     sleep_ptr = next_sleep_ptr;
   }
 
-  free(sleep_data);
   sleep_data = NULL;
 }
